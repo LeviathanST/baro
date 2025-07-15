@@ -112,7 +112,7 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
 }
 
 pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
-    std.log.info("Check index version...", .{});
+    log.info("Check index version...", .{});
     const appdata_path = runner.config.appdata_path;
     const index_file_path = try std.fmt.allocPrint(
         alloc,

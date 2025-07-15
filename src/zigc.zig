@@ -187,5 +187,5 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
         "Downloaded to {s}",
         .{file_path},
     );
-    try utils.extractTarFile(alloc, file_path, appdata_path);
+    try utils.extractTarFile(alloc, log, file_path, appdata_path);
 }

@@ -1,10 +1,10 @@
 /// * Required:
 ///   - tar
 const std = @import("std");
-const log = std.log.scoped(.utils);
 
 pub fn extractTarFile(
     alloc: std.mem.Allocator,
+    log: anytype,
     file_path: []const u8,
     output_path: []const u8,
 ) !void {

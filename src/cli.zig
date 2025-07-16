@@ -55,6 +55,12 @@ pub const Runner = struct {
     }
 
     pub fn run(self: *Runner) !void {
+        if (self.config.options.check_for_update.?) {
+            if (self.config.options.zigc.check_for_update.?) {
+                try zigc.checkForUpdateIndex(self, self.allocator);
+            }
+        }
+
         var argv = try std.process.argsWithAllocator(self.allocator);
         const arg = Arg.fromIter(&argv) orelse {
             self.processError(error.MissingCommand);

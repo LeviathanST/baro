@@ -37,6 +37,8 @@ pub const Runner = struct {
 
     pub fn init(alloc: std.mem.Allocator, commands: []const Command) !Runner {
         var table = std.StringHashMap(Command).init(alloc);
+        errdefer table.deinit();
+
         for (commands) |c| {
             try table.put(c.name, c);
         }

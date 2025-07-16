@@ -62,6 +62,14 @@ pub fn main() !void {
             .execFn = zigc.install,
         },
         .{
+            .name = "list",
+            .execFn = zigc.listAllInstalledVersions,
+        },
+        .{
+            .name = "lista",
+            .execFn = zigc.listAllAvailableVersions,
+        },
+        .{
             .name = "config",
             .execFn = Config.print,
         },

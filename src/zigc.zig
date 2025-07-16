@@ -13,7 +13,6 @@ const MAX_INDEX_FILE_SIZE = 1024 * 100; // 100mb
 /// Use a `HEAD` request and check `Last-Modified`
 /// from http headers then compare content in cache file.
 pub fn checkForUpdateIndex(runner: *CliRunner, alloc: Allocator) !void {
-    log.info("Check for version index update...", .{});
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
     var header_buf: [1024]u8 = undefined;
@@ -66,6 +65,7 @@ pub fn checkForUpdateIndex(runner: *CliRunner, alloc: Allocator) !void {
     const content = try file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
     defer alloc.free(content);
     if (!std.mem.eql(u8, content, last_modified.?)) {
+        log.warn("Detect new versions, use `baro update` command to update.", .{});
         try fetchVerIndex(runner, alloc);
     }
     try std.fs.cwd().writeFile(.{
@@ -188,4 +188,69 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
         .{file_path},
     );
     try utils.extractTarFile(alloc, log, file_path, appdata_path);
+}
+
+pub fn listAllInstalledVersions(
+    runner: *CliRunner,
+    alloc: Allocator,
+    arg: Arg,
+) !void {
+    _ = arg;
+    const appdata_path = runner.config.options.appdata_path.?;
+    const appdata_dir = try std.fs.openDirAbsolute(appdata_path, .{ .iterate = true });
+    var dir_iter = appdata_dir.iterate();
+
+    var list = std.ArrayList([]const u8).init(alloc);
+    defer list.deinit();
+
+    while (try dir_iter.next()) |item| {
+        if (item.kind == .directory and std.mem.startsWith(u8, item.name, "zig-")) {
+            var split = std.mem.splitScalar(u8, item.name, '-');
+            _ = split.first(); // skip `zig-`
+            try list.append(split.rest());
+        }
+    }
+
+    log.info("\r\nAll installed versions:", .{});
+    for (list.items[0..]) |it| {
+        std.debug.print("- {s}\r\n", .{it});
+    }
+}
+
+pub fn listAllAvailableVersions(
+    runner: *CliRunner,
+    alloc: Allocator,
+    arg: Arg,
+) !void {
+    _ = arg;
+    const appdata_path = runner.config.options.appdata_path.?;
+    const index_file_path = try std.fmt.allocPrint(
+        alloc,
+        "{s}/index.json",
+        .{appdata_path},
+    );
+    defer alloc.free(index_file_path);
+
+    std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => try fetchVerIndex(runner, alloc),
+        else => return err,
+    };
+
+    const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
+    const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
+    defer alloc.free(raw);
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+    defer parsed.deinit();
+
+    const keys = parsed.value.object.keys();
+
+    log.info("\r\nAll available versions:", .{});
+    for (keys) |k| {
+        if (std.mem.eql(u8, k, "master")) {
+            const master = parsed.value.object.get(k).?;
+            std.debug.print("- {s} (master)\r\n", .{master.object.get("version").?.string});
+        } else {
+            std.debug.print("- {s}\r\n", .{k});
+        }
+    }
 }

@@ -44,7 +44,7 @@ pub fn checkForUpdateIndex(runner: *CliRunner, alloc: Allocator) !void {
     const baro_cache_file_path = try std.fmt.allocPrint(
         alloc,
         "{s}/{s}",
-        .{ runner.config.cache_path, "baro" },
+        .{ runner.config.options.cache_path.?, "baro" },
     );
     defer alloc.free(baro_cache_file_path);
 
@@ -98,7 +98,7 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
     const index_file_path = try std.fmt.allocPrint(
         alloc,
         "{s}/index.json",
-        .{runner.config.appdata_path},
+        .{runner.config.options.appdata_path.?},
     );
     defer alloc.free(index_file_path);
 
@@ -113,7 +113,7 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
 
 pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
     log.info("Check index version...", .{});
-    const appdata_path = runner.config.appdata_path;
+    const appdata_path = runner.config.options.appdata_path.?;
     const index_file_path = try std.fmt.allocPrint(
         alloc,
         "{s}/index.json",

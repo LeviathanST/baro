@@ -56,11 +56,14 @@ pub fn main() !void {
         }
     }
     const alloc = base_alloc.allocator();
-
     var runner: cli.Runner = try .init(alloc, &[_]cli.Command{
         .{
             .name = "install",
             .execFn = zigc.install,
+        },
+        .{
+            .name = "config",
+            .execFn = Config.print,
         },
     });
     defer runner.deinit();

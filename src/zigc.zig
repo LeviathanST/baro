@@ -12,7 +12,7 @@ const MAX_INDEX_FILE_SIZE = 1024 * 100; // 100mb
 
 /// Use a `HEAD` request and check `Last-Modified`
 /// from http headers then compare content in cache file.
-pub fn checkForUpdateIndex(runner: *CliRunner, alloc: Allocator) !void {
+pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
     var header_buf: [1024]u8 = undefined;
@@ -47,16 +47,29 @@ pub fn checkForUpdateIndex(runner: *CliRunner, alloc: Allocator) !void {
     );
     defer alloc.free(baro_cache_file_path);
 
-    // init cache if not existed
+    // TODO: init cache if not existed
     std.fs.accessAbsolute(baro_cache_file_path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
-            try fetchVerIndex(runner, alloc);
             try std.fs.cwd().writeFile(.{
                 .data = last_modified.?,
                 .sub_path = baro_cache_file_path,
                 .flags = .{ .truncate = false },
             });
             return;
+        },
+        else => return err,
+    };
+
+    const index_file_path = try std.fmt.allocPrint(
+        alloc,
+        "{s}/index.json",
+        .{runner.config.options.appdata_path.?},
+    );
+    defer alloc.free(index_file_path);
+    // TODO: fetch a new index file if not existed
+    std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            try fetchVerIndex(runner, alloc);
         },
         else => return err,
     };
@@ -121,12 +134,6 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
     );
     defer alloc.free(index_file_path);
 
-    std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
-        error.FileNotFound => {
-            try fetchVerIndex(runner, alloc);
-        },
-        else => return err,
-    };
     // NOTE: Take tarball link, zig version from the index file
     const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
     defer index_file.close();
@@ -230,11 +237,6 @@ pub fn listAllAvailableVersions(
         .{appdata_path},
     );
     defer alloc.free(index_file_path);
-
-    std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
-        error.FileNotFound => try fetchVerIndex(runner, alloc),
-        else => return err,
-    };
 
     const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
     const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);

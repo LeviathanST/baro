@@ -33,7 +33,7 @@ const Options = struct {
         return .{
             .appdata_path = appdata_path,
             .cache_path = cache_path,
-            .check_for_update = false,
+            .check_for_update = true,
             .zigc = .{
                 .enabled = true,
                 .check_for_update = true,

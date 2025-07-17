@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 const Arg = @import("cli.zig").Arg;
 
 const MAX_INDEX_FILE_SIZE = 1024 * 100; // 100mb
+const LAST_MODIFIED_VERSION_FILE = "last_modified_version";
 
 /// Use a `HEAD` request and check `Last-Modified`
 /// from http headers then compare content in cache file.
@@ -40,19 +41,19 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
         return error.NotFound;
     }
 
-    const baro_cache_file_path = try std.fmt.allocPrint(
+    const last_modified_file = try std.fmt.allocPrint(
         alloc,
         "{s}/{s}",
-        .{ runner.config.options.cache_path.?, "baro" },
+        .{ runner.config.options.cache_path.?, LAST_MODIFIED_VERSION_FILE },
     );
-    defer alloc.free(baro_cache_file_path);
+    defer alloc.free(last_modified_file);
 
     // NOTE: init cache if not existed
-    std.fs.accessAbsolute(baro_cache_file_path, .{}) catch |err| switch (err) {
+    std.fs.accessAbsolute(last_modified_file, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             try std.fs.cwd().writeFile(.{
                 .data = last_modified.?,
-                .sub_path = baro_cache_file_path,
+                .sub_path = last_modified_file,
                 .flags = .{ .truncate = false },
             });
         },
@@ -73,16 +74,54 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
         else => return err,
     };
 
-    const file = try std.fs.openFileAbsolute(baro_cache_file_path, .{ .mode = .read_only });
+    const file = try std.fs.openFileAbsolute(last_modified_file, .{ .mode = .read_only });
     const content = try file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
     defer alloc.free(content);
     if (!std.mem.eql(u8, content, last_modified.?)) {
         log.warn("Detect new versions, use `baro update` command to update.", .{});
-        try fetchVerIndex(runner, alloc);
     }
+}
+
+pub fn update(runner: *CliRunner, alloc: std.mem.Allocator, arg: Arg) !void {
+    _ = arg;
+    var http_client: std.http.Client = .{ .allocator = alloc };
+    defer http_client.deinit();
+    var header_buf: [1024]u8 = undefined;
+    var req = try http_client.open(
+        .HEAD,
+        try .parse("https://ziglang.org/download/index.json"),
+        .{ .server_header_buffer = &header_buf },
+    );
+    defer req.deinit();
+
+    try req.send();
+    try req.finish();
+    try req.wait();
+
+    const res = req.response;
+    var headers = res.iterateHeaders();
+    var last_modified: ?[]const u8 = null;
+    while (headers.next()) |header| {
+        if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
+            last_modified = header.value;
+        }
+    }
+    if (last_modified == null) {
+        runner.error_data.string = "last-modified";
+        return error.NotFound;
+    }
+    try fetchVerIndex(runner, alloc);
+
+    const last_modified_file = try std.fmt.allocPrint(
+        alloc,
+        "{s}/{s}",
+        .{ runner.config.options.cache_path.?, LAST_MODIFIED_VERSION_FILE },
+    );
+    defer alloc.free(last_modified_file);
+
     try std.fs.cwd().writeFile(.{
         .data = last_modified.?,
-        .sub_path = baro_cache_file_path,
+        .sub_path = last_modified_file,
         .flags = .{ .truncate = false },
     });
 }

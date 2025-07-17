@@ -70,6 +70,10 @@ pub fn main() !void {
             .execFn = zigc.listAllAvailableVersions,
         },
         .{
+            .name = "update",
+            .execFn = zigc.update,
+        },
+        .{
             .name = "config",
             .execFn = Config.print,
         },

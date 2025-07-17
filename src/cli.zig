@@ -73,7 +73,7 @@ pub const Runner = struct {
                 self.processError(err);
             };
         } else {
-            self.error_data.?.string = arg.name;
+            self.error_data = .{ .string = arg.name };
             self.processError(error.UnknownCommand);
         }
     }

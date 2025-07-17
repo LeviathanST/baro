@@ -229,13 +229,13 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
     try req.finish();
     try req.wait();
 
-    const file_path = try std.fmt.allocPrint(
+    const tar_file_path = try std.fmt.allocPrint(
         alloc,
         "{s}/zig-{s}.tar.xz",
         .{ appdata_path, version },
     );
-    defer alloc.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+    defer alloc.free(tar_file_path);
+    const file = try std.fs.cwd().createFile(tar_file_path, .{});
     defer file.close();
 
     var buffer: [8192]u8 = undefined;
@@ -246,11 +246,12 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
         try file.writeAll(buffer[0..byte_read]);
         total_bytes += byte_read;
     }
-    log.info(
-        "Downloaded to {s}",
-        .{file_path},
-    );
-    try utils.extractTarFile(alloc, log, file_path, appdata_path);
+    const output_dir = try std.fmt.allocPrint(alloc, "{s}/zig-{s}", .{ runner.config.options.appdata_path.?, version });
+    defer alloc.free(output_dir);
+    try std.fs.makeDirAbsolute(output_dir);
+    try utils.extractTarFile(alloc, log, tar_file_path, output_dir);
+    try std.fs.deleteFileAbsolute(tar_file_path);
+    log.info("Clean the tar file!", .{});
 }
 
 pub fn listAllInstalledVersions(
@@ -270,8 +271,6 @@ pub fn listAllInstalledVersions(
         if (item.kind == .directory and std.mem.startsWith(u8, item.name, "zig-")) {
             var split = std.mem.splitScalar(u8, item.name, '-');
             _ = split.first(); // skip `zig-`
-            _ = split.next().?; //
-            _ = split.next().?; // skip `-arch-os`
             try list.append(split.rest());
         }
     }

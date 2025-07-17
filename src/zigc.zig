@@ -186,18 +186,20 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
     const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
     defer alloc.free(raw);
 
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+    defer parsed.deinit();
+    const value: std.json.Value = parsed.value;
+    const root = value.object.get(arg.value orelse unreachable) orelse {
+        runner.error_data = .{ .string = arg.value.? };
+        return error.NotFound;
+    };
+
     const builtin = @import("builtin");
     const @"arch-os" = try std.fmt.allocPrint(
         alloc,
         "{s}-{s}",
         .{ @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) },
     );
-
-    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
-    defer parsed.deinit();
-    const value: std.json.Value = parsed.value;
-    const root = value.object.get(arg.value orelse unreachable) orelse unreachable;
-
     const src = root.object.get(@"arch-os") orelse {
         runner.error_data = RunnerError{ .allocated_string = @"arch-os" };
         return error.Unsupported;
@@ -248,11 +250,18 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
         try file.writeAll(buffer[0..byte_read]);
         total_bytes += byte_read;
     }
-    const output_dir = try std.fmt.allocPrint(alloc, "{s}/zig-{s}", .{ runner.config.options.appdata_path.?, version });
+    const output_dir = try std.fmt.allocPrint(alloc, "{s}/zig-{s}", .{ appdata_path, version });
     defer alloc.free(output_dir);
     try std.fs.makeDirAbsolute(output_dir);
     try utils.extractTarFile(alloc, log, tar_file_path, output_dir);
     try std.fs.deleteFileAbsolute(tar_file_path);
+    if (std.mem.eql(u8, arg.value.?, "master")) {
+        const zig_master_exe = try std.fmt.allocPrint(alloc, "{s}/zig", .{output_dir});
+        defer alloc.free(zig_master_exe);
+        const master_symlink = try std.fmt.allocPrint(alloc, "{s}/master", .{appdata_path});
+        defer alloc.free(master_symlink);
+        try std.fs.symLinkAbsolute(zig_master_exe, master_symlink, .{});
+    }
     log.info("Clean the tar file!", .{});
 }
 

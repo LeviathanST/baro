@@ -32,10 +32,12 @@ pub const Runner = struct {
     allocator: std.mem.Allocator,
     command_table: std.StringHashMap(Command),
     config: Config,
-    error_data: struct {
-        string: []const u8 = "",
-        allocated_string: ?[]const u8 = null,
-    },
+    error_data: ?Error = null,
+
+    pub const Error = union(enum) {
+        string: []const u8,
+        allocated_string: []const u8,
+    };
 
     pub fn init(alloc: std.mem.Allocator, commands: []const Command) !Runner {
         var table = std.StringHashMap(Command).init(alloc);
@@ -48,7 +50,6 @@ pub const Runner = struct {
             .allocator = alloc,
             .command_table = table,
             .config = try .init(alloc),
-            .error_data = .{},
         };
     }
     pub fn deinit(self: *Runner) void {
@@ -72,25 +73,27 @@ pub const Runner = struct {
                 self.processError(err);
             };
         } else {
-            self.error_data.string = arg.name;
+            self.error_data.?.string = arg.name;
             self.processError(error.UnknownCommand);
         }
     }
 
     pub fn processError(self: Runner, err: anyerror) void {
+        const str, const is_allocated = switch (self.error_data.?) {
+            .allocated_string => |slice| .{ slice, true },
+            .string => |slice| .{ slice, false },
+        };
+        defer if (is_allocated) {
+            self.allocator.free(str);
+        };
+
         switch (err) {
-            error.UnknownCommand => log.err("unknown command `{s}`", .{self.error_data.string}),
+            error.UnknownCommand => log.err("unknown command `{s}`", .{str}),
             error.MissingCommand => log.err("missing command", .{}),
-            error.MissingValue => log.err("missing value for `{s}` command", .{self.error_data.string}),
-            error.FetchingFailed => std.log.err("fetching {s} failed", .{self.error_data.string}),
-            error.Unsupported => {
-                std.log.err(
-                    "your cpu arch - os ({s}) is not supported",
-                    .{self.error_data.allocated_string.?},
-                );
-                defer self.allocator.free(self.error_data.allocated_string.?);
-            },
-            error.NotFound => std.log.err("{s} not found", .{self.error_data.string}),
+            error.MissingValue => log.err("missing value for `{s}` command", .{str}),
+            error.FetchingFailed => std.log.err("fetching {s} failed", .{str}),
+            error.Unsupported => std.log.err("your cpu arch - os ({s}) is not supported", .{str}),
+            error.NotFound => std.log.err("{s} not found", .{str}),
             else => {
                 log.debug("unknown error: {}", .{err});
                 log.err("unknown error", .{});

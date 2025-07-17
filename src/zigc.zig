@@ -3,7 +3,9 @@ const known_folders = @import("known_folders");
 const log = std.log.scoped(.zig_compiler);
 
 const utils = @import("utils.zig");
-const CliRunner = @import("cli.zig").Runner;
+const cli = @import("cli.zig");
+const Runner = cli.Runner;
+const RunnerError = cli.Runner.Error;
 
 const Allocator = std.mem.Allocator;
 const Arg = @import("cli.zig").Arg;
@@ -13,7 +15,7 @@ const LAST_MODIFIED_VERSION_FILE = "last_modified_version";
 
 /// Use a `HEAD` request and check `Last-Modified`
 /// from http headers then compare content in cache file.
-pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
+pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
     var header_buf: [1024]u8 = undefined;
@@ -37,7 +39,7 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
         }
     }
     if (last_modified == null) {
-        runner.error_data.string = "last-modified";
+        runner.error_data = RunnerError{ .string = "last-modified" };
         return error.NotFound;
     }
 
@@ -83,7 +85,7 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
 }
 
 /// Fetch new index verion and write new last modified version
-pub fn update(runner: *CliRunner, alloc: std.mem.Allocator, arg: Arg) !void {
+pub fn update(runner: *Runner, alloc: std.mem.Allocator, arg: Arg) !void {
     _ = arg;
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
@@ -108,7 +110,7 @@ pub fn update(runner: *CliRunner, alloc: std.mem.Allocator, arg: Arg) !void {
         }
     }
     if (last_modified == null) {
-        runner.error_data.string = "last-modified";
+        runner.error_data = RunnerError{ .string = "last-modified" };
         return error.NotFound;
     }
     try fetchVerIndex(runner, alloc);
@@ -127,7 +129,7 @@ pub fn update(runner: *CliRunner, alloc: std.mem.Allocator, arg: Arg) !void {
     });
 }
 
-pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
+pub fn fetchVerIndex(runner: *Runner, alloc: Allocator) !void {
     log.info("Fetching new version index...", .{});
     var http_client = std.http.Client{
         .allocator = alloc,
@@ -143,7 +145,7 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
         .location = .{ .uri = try .parse("https://ziglang.org/download/index.json") },
     });
     if (fetch_result.status != .ok) {
-        runner.error_data.string = "version index of the Zig compiler";
+        runner.error_data = RunnerError{ .string = "version index of the Zig compiler" };
         return error.FetchingFailed;
     }
 
@@ -163,9 +165,9 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
     log.info("Fetching successfully!", .{});
 }
 
-pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
+pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
     if (arg.value == null) {
-        runner.error_data.string = "install";
+        runner.error_data = RunnerError{ .string = "install" };
         return error.MissingValue;
     }
     log.info("Check version index...", .{});
@@ -197,7 +199,7 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
     const root = value.object.get(arg.value orelse unreachable) orelse unreachable;
 
     const src = root.object.get(@"arch-os") orelse {
-        runner.error_data.allocated_string = @"arch-os";
+        runner.error_data = RunnerError{ .allocated_string = @"arch-os" };
         return error.Unsupported;
     };
     defer alloc.free(@"arch-os"); // NOTE: defer here to make sure `arch-os` is supported.
@@ -255,7 +257,7 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
 }
 
 pub fn listAllInstalledVersions(
-    runner: *CliRunner,
+    runner: *Runner,
     alloc: Allocator,
     arg: Arg,
 ) !void {
@@ -282,7 +284,7 @@ pub fn listAllInstalledVersions(
 }
 
 pub fn listAllAvailableVersions(
-    runner: *CliRunner,
+    runner: *Runner,
     alloc: Allocator,
     arg: Arg,
 ) !void {
@@ -314,8 +316,54 @@ pub fn listAllAvailableVersions(
     }
 }
 
-// pub fn use(
-//     runner: *CliRunner,
-//     alloc: Allocator,
-//     arg: Arg,
-// ) void {}
+pub fn use(
+    runner: *Runner,
+    alloc: Allocator,
+    arg: Arg,
+) void {
+    if (arg.value == null) {
+        runner.error_data = RunnerError{ .string = "use" };
+        return error.MissingValue;
+    }
+    const appdata_path = runner.config.options.appdata_path.?;
+    const index_file_path = try std.fmt.allocPrint(
+        alloc,
+        "{s}/index.json",
+        .{appdata_path},
+    );
+    defer alloc.free(index_file_path);
+
+    // NOTE: Take tarball link, zig version from the index file
+    const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
+    defer index_file.close();
+
+    const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
+    defer alloc.free(raw);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+    defer parsed.deinit();
+    const value: std.json.Value = parsed.value;
+    const root = value.object.get(arg.value orelse unreachable) orelse unreachable;
+
+    const version = blk: {
+        if (std.mem.eql(u8, arg.value.?, "master")) {
+            break :blk (root.object.get("version") orelse unreachable).string;
+        } else {
+            break :blk arg.value.?;
+        }
+    };
+    const zig_version = std.fmt.allocPrint(
+        alloc,
+        "{s}/zig-{s}",
+        .{ runner.config.options.appdata_path.?, version },
+    );
+    defer alloc.free(zig_version);
+
+    std.fs.accessAbsolute(zig_version, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            runner.error_data = RunnerError{ .string = arg.value.? };
+            return error.NotFound;
+        },
+        else => return err,
+    };
+}

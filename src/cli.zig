@@ -81,6 +81,7 @@ pub const Runner = struct {
         switch (err) {
             error.UnknownCommand => log.err("unknown command `{s}`", .{self.error_data.string}),
             error.MissingCommand => log.err("missing command", .{}),
+            error.MissingValue => log.err("missing value for `{s}` command", .{self.error_data.string}),
             error.FetchingFailed => std.log.err("fetching {s} failed", .{self.error_data.string}),
             error.Unsupported => {
                 std.log.err(

@@ -82,6 +82,7 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
     }
 }
 
+/// Fetch new index verion and write new last modified version
 pub fn update(runner: *CliRunner, alloc: std.mem.Allocator, arg: Arg) !void {
     _ = arg;
     var http_client: std.http.Client = .{ .allocator = alloc };
@@ -163,6 +164,10 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
 }
 
 pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
+    if (arg.value == null) {
+        runner.error_data.string = "install";
+        return error.MissingValue;
+    }
     log.info("Check version index...", .{});
     const appdata_path = runner.config.options.appdata_path.?;
     const index_file_path = try std.fmt.allocPrint(

@@ -90,7 +90,7 @@ pub const Runner = struct {
                 );
                 defer self.allocator.free(self.error_data.allocated_string.?);
             },
-            error.NotFound => std.log.err("`{s}` not found", .{self.error_data.string}),
+            error.NotFound => std.log.err("{s} not found", .{self.error_data.string}),
             else => {
                 log.debug("unknown error: {}", .{err});
                 log.err("unknown error", .{});

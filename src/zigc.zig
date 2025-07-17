@@ -47,7 +47,7 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
     );
     defer alloc.free(baro_cache_file_path);
 
-    // TODO: init cache if not existed
+    // NOTE: init cache if not existed
     std.fs.accessAbsolute(baro_cache_file_path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             try std.fs.cwd().writeFile(.{
@@ -55,7 +55,6 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
                 .sub_path = baro_cache_file_path,
                 .flags = .{ .truncate = false },
             });
-            return;
         },
         else => return err,
     };
@@ -66,7 +65,7 @@ pub fn checkForUpdate(runner: *CliRunner, alloc: Allocator) !void {
         .{runner.config.options.appdata_path.?},
     );
     defer alloc.free(index_file_path);
-    // TODO: fetch a new index file if not existed
+    // NOTE: fetch a new index file if not existed
     std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             try fetchVerIndex(runner, alloc);
@@ -125,7 +124,7 @@ pub fn fetchVerIndex(runner: *CliRunner, alloc: Allocator) !void {
 }
 
 pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
-    log.info("Check index version...", .{});
+    log.info("Check version index...", .{});
     const appdata_path = runner.config.options.appdata_path.?;
     const index_file_path = try std.fmt.allocPrint(
         alloc,
@@ -141,11 +140,24 @@ pub fn install(runner: *CliRunner, alloc: Allocator, arg: Arg) !void {
     const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
     defer alloc.free(raw);
 
+    const builtin = @import("builtin");
+    const @"arch-os" = try std.fmt.allocPrint(
+        alloc,
+        "{s}-{s}",
+        .{ @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) },
+    );
+
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
     defer parsed.deinit();
     const value: std.json.Value = parsed.value;
     const root = value.object.get(arg.value orelse unreachable) orelse unreachable;
-    const src = root.object.get("src") orelse unreachable;
+
+    const src = root.object.get(@"arch-os") orelse {
+        runner.error_data.allocated_string = @"arch-os";
+        return error.Unsupported;
+    };
+    defer alloc.free(@"arch-os"); // NOTE: defer here to make sure `arch-os` is supported.
+
     const tarball_link = (src.object.get("tarball") orelse unreachable).string;
 
     const version = blk: {
@@ -214,6 +226,8 @@ pub fn listAllInstalledVersions(
         if (item.kind == .directory and std.mem.startsWith(u8, item.name, "zig-")) {
             var split = std.mem.splitScalar(u8, item.name, '-');
             _ = split.first(); // skip `zig-`
+            _ = split.next().?; //
+            _ = split.next().?; // skip `-arch-os`
             try list.append(split.rest());
         }
     }
@@ -256,3 +270,9 @@ pub fn listAllAvailableVersions(
         }
     }
 }
+
+// pub fn use(
+//     runner: *CliRunner,
+//     alloc: Allocator,
+//     arg: Arg,
+// ) void {}

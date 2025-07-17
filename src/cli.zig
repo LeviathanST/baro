@@ -91,6 +91,10 @@ pub const Runner = struct {
             error.UnknownCommand => log.err("unknown command `{s}`", .{str}),
             error.MissingCommand => log.err("missing command", .{}),
             error.MissingValue => log.err("missing value for `{s}` command", .{str}),
+            error.AccessDenied => log.err(
+                \\you need to run this command with sudo
+                \\(REASON: {s})
+            , .{str}),
             error.FetchingFailed => std.log.err("fetching {s} failed", .{str}),
             error.Unsupported => std.log.err("your cpu arch - os ({s}) is not supported", .{str}),
             error.NotFound => std.log.err("{s} not found", .{str}),

@@ -7,6 +7,7 @@ const zigc = @import("zigc.zig");
 pub const Arg = struct {
     name: []const u8,
     value: ?[]const u8 = null,
+    // TODO: options
 
     /// Take an `Arg` from `std.process.ArgIterator`.
     pub fn fromIter(iter: *std.process.ArgIterator) ?Arg {
@@ -33,6 +34,7 @@ pub const Runner = struct {
     config: Config,
     error_data: struct {
         string: []const u8 = "",
+        allocated_string: ?[]const u8 = null,
     },
 
     pub fn init(alloc: std.mem.Allocator, commands: []const Command) !Runner {
@@ -57,7 +59,7 @@ pub const Runner = struct {
     pub fn run(self: *Runner) !void {
         if (self.config.options.check_for_update.?) {
             if (self.config.options.zigc.check_for_update.?) {
-                try zigc.checkForUpdateIndex(self, self.allocator);
+                try zigc.checkForUpdate(self, self.allocator);
             }
         }
 
@@ -81,6 +83,13 @@ pub const Runner = struct {
             error.UnknownCommand => log.err("unknown command `{s}`", .{self.error_data.string}),
             error.MissingCommand => log.err("missing command", .{}),
             error.FetchingFailed => std.log.err("fetching {s} failed", .{self.error_data.string}),
+            error.Unsupported => {
+                std.log.err(
+                    "your cpu arch - os ({s}) is not supported",
+                    .{self.error_data.allocated_string.?},
+                );
+                defer self.allocator.free(self.error_data.allocated_string.?);
+            },
             error.NotFound => std.log.err("`{s}` not found", .{self.error_data.string}),
             else => {
                 log.debug("unknown error: {}", .{err});

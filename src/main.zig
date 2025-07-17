@@ -74,6 +74,10 @@ pub fn main() !void {
             .execFn = zigc.update,
         },
         .{
+            .name = "use",
+            .execFn = zigc.use,
+        },
+        .{
             .name = "config",
             .execFn = Config.print,
         },

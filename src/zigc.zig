@@ -329,7 +329,7 @@ pub fn use(
     runner: *Runner,
     alloc: Allocator,
     arg: Arg,
-) void {
+) !void {
     if (arg.value == null) {
         runner.error_data = RunnerError{ .string = "use" };
         return error.MissingValue;
@@ -342,17 +342,27 @@ pub fn use(
     );
     defer alloc.free(index_file_path);
 
-    // NOTE: Take tarball link, zig version from the index file
+    // NOTE: Take zig version from the index file
     const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
     defer index_file.close();
 
     const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
     defer alloc.free(raw);
 
+    // NOTE: check if zig version is available
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
     defer parsed.deinit();
     const value: std.json.Value = parsed.value;
-    const root = value.object.get(arg.value orelse unreachable) orelse unreachable;
+    const root = value.object.get(arg.value orelse unreachable) orelse {
+        runner.error_data = RunnerError{
+            .allocated_string = try std.fmt.allocPrint(
+                alloc,
+                "zig compiler version `{s}`",
+                .{arg.value.?},
+            ),
+        };
+        return error.NotFound;
+    };
 
     const version = blk: {
         if (std.mem.eql(u8, arg.value.?, "master")) {
@@ -361,18 +371,69 @@ pub fn use(
             break :blk arg.value.?;
         }
     };
-    const zig_version = std.fmt.allocPrint(
-        alloc,
-        "{s}/zig-{s}",
-        .{ runner.config.options.appdata_path.?, version },
-    );
-    defer alloc.free(zig_version);
 
-    std.fs.accessAbsolute(zig_version, .{}) catch |err| switch (err) {
+    const exe = blk: {
+        if (std.mem.eql(u8, arg.value.?, "master")) {
+            break :blk try std.fmt.allocPrint(
+                alloc,
+                "{s}/master",
+                .{appdata_path},
+            );
+        } else {
+            break :blk try std.fmt.allocPrint(
+                alloc,
+                "{s}/zig-{s}/zig",
+                .{ appdata_path, version },
+            );
+        }
+    };
+    defer alloc.free(exe);
+    std.log.debug("Exe path: {s}", .{exe});
+
+    // NOTE: check if specified zig version is
+    //       available in the index file
+    std.fs.accessAbsolute(exe, .{}) catch |err| switch (err) {
         error.FileNotFound => {
-            runner.error_data = RunnerError{ .string = arg.value.? };
+            runner.error_data = RunnerError{
+                .allocated_string = try std.fmt.allocPrint(
+                    alloc,
+                    "zig compiler installed version `{s}`",
+                    .{version},
+                ),
+            };
             return error.NotFound;
         },
         else => return err,
     };
+
+    const bin_dir = try std.fmt.allocPrint(
+        alloc,
+        "{s}/bin",
+        .{appdata_path},
+    );
+    defer alloc.free(bin_dir);
+    std.fs.accessAbsolute(bin_dir, .{}) catch |err| switch (err) {
+        error.FileNotFound => try std.fs.makeDirAbsolute(bin_dir),
+        else => return err,
+    };
+
+    const zig_bin = try std.fmt.allocPrint(
+        alloc,
+        "{s}/bin/zig",
+        .{runner.config.options.appdata_path.?},
+    );
+    defer alloc.free(zig_bin);
+    // NOTE: remove zig_bin if its existed
+    if (std.fs.accessAbsolute(zig_bin, .{})) |v| {
+        _ = v;
+        try std.fs.deleteFileAbsolute(zig_bin);
+    } else |err| {
+        switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+    }
+
+    // NOTE: symlink exe to
+    try std.fs.symLinkAbsolute(exe, zig_bin, .{});
 }

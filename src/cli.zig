@@ -21,7 +21,7 @@ pub const Arg = struct {
 
 pub const Command = struct {
     name: []const u8,
-    options: []const Option,
+    options: []const Option = &.{},
     take_value: TakeValue = .none,
     execFn: *const fn (*Runner, std.mem.Allocator, Arg) anyerror!void,
 

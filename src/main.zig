@@ -56,32 +56,47 @@ pub fn main() !void {
         }
     }
     const alloc = base_alloc.allocator();
-    var runner: cli.Runner = try .init(alloc, &[_]cli.Command{
+    const commands = &[_]cli.Command{
         .{
             .name = "install",
             .execFn = zigc.install,
+            .take_value = .one,
+            .options = &[_]cli.Command.Option{
+                .{
+                    .long_name = "compiler",
+                    .short_name = "c",
+                    .take_value = .none,
+                },
+            },
         },
         .{
             .name = "list",
             .execFn = zigc.listAllInstalledVersions,
+            .options = &[_]cli.Command.Option{},
         },
         .{
             .name = "lista",
             .execFn = zigc.listAllAvailableVersions,
+            .options = &[_]cli.Command.Option{},
         },
         .{
             .name = "update",
             .execFn = zigc.update,
+            .options = &[_]cli.Command.Option{},
         },
         .{
             .name = "use",
             .execFn = zigc.use,
+            .options = &[_]cli.Command.Option{},
         },
         .{
             .name = "config",
             .execFn = Config.print,
+            .options = &[_]cli.Command.Option{},
         },
-    });
+    };
+    var runner: cli.Runner = try .init(alloc);
     defer runner.deinit();
-    try runner.run();
+
+    try runner.run(commands);
 }

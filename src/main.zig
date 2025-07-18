@@ -64,8 +64,8 @@ pub fn main() !void {
         },
         .{
             .name = "use",
-            .take_value = .none,
             .execFn = zigc.use,
+            .take_value = .one,
         },
         .{ .name = "list", .execFn = zigc.listAllInstalledVersions },
         .{ .name = "lista", .execFn = zigc.listAllAvailableVersions },

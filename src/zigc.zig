@@ -166,10 +166,6 @@ pub fn fetchVerIndex(runner: *Runner, alloc: Allocator) !void {
 }
 
 pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
-    if (arg.value == null) {
-        runner.error_data = RunnerError{ .string = "install" };
-        return error.MissingValue;
-    }
     log.info("Check version index...", .{});
     const appdata_path = runner.config.options.appdata_path.?;
     const index_file_path = try std.fmt.allocPrint(
@@ -330,10 +326,6 @@ pub fn use(
     alloc: Allocator,
     arg: Arg,
 ) !void {
-    if (arg.value == null) {
-        runner.error_data = RunnerError{ .string = "use" };
-        return error.MissingValue;
-    }
     const appdata_path = runner.config.options.appdata_path.?;
     const index_file_path = try std.fmt.allocPrint(
         alloc,

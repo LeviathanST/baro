@@ -61,39 +61,17 @@ pub fn main() !void {
             .name = "install",
             .execFn = zigc.install,
             .take_value = .one,
-            .options = &[_]cli.Command.Option{
-                .{
-                    .long_name = "compiler",
-                    .short_name = "c",
-                    .take_value = .none,
-                },
-            },
-        },
-        .{
-            .name = "list",
-            .execFn = zigc.listAllInstalledVersions,
-            .options = &[_]cli.Command.Option{},
-        },
-        .{
-            .name = "lista",
-            .execFn = zigc.listAllAvailableVersions,
-            .options = &[_]cli.Command.Option{},
-        },
-        .{
-            .name = "update",
-            .execFn = zigc.update,
-            .options = &[_]cli.Command.Option{},
         },
         .{
             .name = "use",
+            .take_value = .none,
             .execFn = zigc.use,
-            .options = &[_]cli.Command.Option{},
         },
-        .{
-            .name = "config",
-            .execFn = Config.print,
-            .options = &[_]cli.Command.Option{},
-        },
+        .{ .name = "list", .execFn = zigc.listAllInstalledVersions },
+        .{ .name = "lista", .execFn = zigc.listAllAvailableVersions },
+        .{ .name = "update", .execFn = zigc.update },
+
+        .{ .name = "config", .execFn = Config.print },
     };
     var runner: cli.Runner = try .init(alloc);
     defer runner.deinit();

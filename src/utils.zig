@@ -10,7 +10,7 @@ pub fn extractTarFile(
 ) !void {
     log.info("Extracting...", .{});
     var child: std.process.Child = .init(
-        &.{ "tar", "-xf", file_path, "-C", output_path },
+        &.{ "tar", "-xf", file_path, "--strip-component", "1", "-C", output_path },
         alloc,
     );
     // TODO: notify exit signal

@@ -10,11 +10,21 @@ options: Options,
 _arena: *std.heap.ArenaAllocator,
 
 const Options = struct {
-    appdata_path: ?[]const u8 = null,
-    cache_path: ?[]const u8 = null,
-    enabled_zigc: ?bool = null,
-    enabled_zlint: ?bool = null,
-    enabled_zls: ?bool = null,
+    appdata_path: ?[]const u8,
+    cache_path: ?[]const u8,
+    check_for_update: ?bool,
+    zigc: struct {
+        enabled: ?bool,
+        check_for_update: ?bool,
+    },
+    zlint: struct {
+        enabled: ?bool,
+        check_for_update: ?bool,
+    },
+    zls: struct {
+        enabled: ?bool,
+        check_for_update: ?bool,
+    },
 
     pub fn default(alloc: std.mem.Allocator) !Options {
         const appdata_path = try defaultPath(alloc, .data, "");
@@ -23,9 +33,19 @@ const Options = struct {
         return .{
             .appdata_path = appdata_path,
             .cache_path = cache_path,
-            .enabled_zigc = true,
-            .enabled_zlint = true,
-            .enabled_zls = true,
+            .check_for_update = true,
+            .zigc = .{
+                .enabled = true,
+                .check_for_update = true,
+            },
+            .zlint = .{
+                .enabled = true,
+                .check_for_update = true,
+            },
+            .zls = .{
+                .enabled = true,
+                .check_for_update = true,
+            },
         };
     }
 
@@ -74,9 +94,9 @@ pub fn print(runner: *cli.Runner, allocator: std.mem.Allocator, arg: cli.Arg) !v
 
     const appdata_path = default_options.appdata_path.?;
     const cache_path = default_options.cache_path.?;
-    const zigc = default_options.enabled_zigc.?;
-    const zlint = default_options.enabled_zlint.?;
-    const zls = default_options.enabled_zls.?;
+    const zigc = default_options.zigc.enabled.?;
+    const zlint = default_options.zlint.enabled.?;
+    const zls = default_options.zls.enabled.?;
 
     log.info(
         \\

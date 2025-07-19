@@ -186,7 +186,11 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
     defer parsed.deinit();
     const value: std.json.Value = parsed.value;
     const root = value.object.get(arg.value orelse unreachable) orelse {
-        runner.error_data = .{ .string = arg.value.? };
+        runner.error_data = .{ .allocated_string = try std.fmt.allocPrint(
+            alloc,
+            "The zig compiler version `{s}`",
+            .{arg.value.?},
+        ) };
         return error.NotFound;
     };
 

@@ -53,14 +53,6 @@ pub const Command = struct {
                 );
             }
         }
-
-        /// Get a generic name `(currently, always long name)`
-        /// from a long or short name
-        pub fn getGenericName(opt: Option, short_or_long_name: []const u8) []const u8 {
-            if (opt.eqlName(short_or_long_name)) {
-                return opt.long_name;
-            }
-        }
     };
 
     pub const TakeValue = enum {

@@ -115,27 +115,28 @@ pub const Runner = struct {
         iter: *std.process.ArgIterator,
     ) !Arg {
         var options = std.StringHashMap(Arg.Option).init(self.allocator);
-        while (iter.next()) |it| {
-            if (std.mem.startsWith(u8, it, "-")) {
-                const option = try self.parseOption(command.options, iter, it);
-                try options.put(it, option);
-            }
-        }
-
         var arg: Arg = .{
             .options = options,
         };
         errdefer arg.deinit();
 
-        if (command.take_value != .none) {
-            if (iter.next()) |value| {
-                arg.value = value;
+        while (iter.next()) |it| {
+            if (std.mem.startsWith(u8, it, "-")) {
+                const option = try self.parseOption(command.options, iter, it);
+                try options.put(it, option);
             } else {
-                self.error_data = .{ .string = command.name };
-                return error.MissingValue;
+                if (command.take_value != .none) {
+                    arg.value = it;
+                    return arg;
+                }
             }
         }
-        return arg;
+
+        if (command.take_value == .none)
+            return arg;
+
+        self.error_data = .{ .string = command.name };
+        return error.MissingValue;
     }
 
     fn parseOption(

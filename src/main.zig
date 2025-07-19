@@ -40,6 +40,20 @@ fn logFn(
     nosuspend stderr.print(color ++ "[" ++ @tagName(scope) ++ "] " ++ level ++ ": " ++ Color.RESET ++ fmt ++ "\r\n", args) catch return;
 }
 
+fn install(runner: *cli.Runner, alloc: std.mem.Allocator, arg: cli.Arg) !void {
+    if (arg.options.get("compiler")) |_| {
+        try zigc.install(runner, alloc, arg);
+    } else if (arg.options.get("linter")) |_| {
+        std.log.err("todo", .{});
+        unreachable;
+    } else if (arg.options.get("lsp")) |_| {
+        std.log.err("todo", .{});
+        unreachable;
+    } else {
+        try zigc.install(runner, alloc, arg);
+    }
+}
+
 pub fn main() !void {
     var base_alloc, const is_debug = switch (@import("builtin").mode) {
         .Debug => .{ std.heap.DebugAllocator(.{}).init, true },
@@ -59,8 +73,15 @@ pub fn main() !void {
     const commands = &[_]cli.Command{
         .{
             .name = "install",
-            .execFn = zigc.install,
+            .execFn = install,
             .take_value = .one,
+            .options = &.{
+                .{
+                    .long_name = "compiler",
+                    .short_name = "c",
+                    .take_value = .none,
+                },
+            },
         },
         .{
             .name = "use",

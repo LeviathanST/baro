@@ -116,6 +116,27 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
 /// Fetch new index version and write new last modified version
 pub fn update(runner: *Runner, alloc: std.mem.Allocator, arg: Arg) !void {
     _ = arg;
+    // NOTE: check the current Zig compiler version
+    {
+        const zig_exe = try std.fmt.allocPrint(
+            alloc,
+            "{s}/bin/zig",
+            .{runner.config.options.appdata_path.?},
+        );
+        defer alloc.free(zig_exe);
+        if (!(try currentIsMaster(zig_exe))) {
+            log.warn(
+                \\
+                \\If you want to update the master version,
+                \\you must be in the master version to update.
+                \\Use `baro use master` to switch into the master
+                \\version.
+            ,
+                .{},
+            );
+            return;
+        }
+    }
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
     var header_buf: [1024]u8 = undefined;
@@ -156,29 +177,64 @@ pub fn update(runner: *Runner, alloc: std.mem.Allocator, arg: Arg) !void {
         .sub_path = last_modified_file,
         .flags = .{ .truncate = false },
     });
+    try updateMaster(runner, alloc);
 }
 
-// TODO: WIP
 pub fn updateMaster(runner: *Runner, alloc: std.mem.Allocator) !void {
-    var real_file_path: [std.fs.max_path_bytes]u8 = undefined;
-    const symlink_exe_path = try std.fmt.allocPrint(
-        alloc,
-        "{s}/master",
-        .{runner.config.options.appdata_path.?},
-    );
-    defer alloc.free(symlink_exe_path);
+    const appdata_path = runner.config.options.appdata_path.?;
+    // NOTE: delete old master
+    {
+        log.debug("Delete the old master version", .{});
+        var real_file_path: [std.fs.max_path_bytes]u8 = undefined;
+        const symlink_exe_path = try std.fmt.allocPrint(
+            alloc,
+            "{s}/master",
+            .{appdata_path},
+        );
+        defer alloc.free(symlink_exe_path);
 
-    const old = std.fs.readLinkAbsolute(symlink_exe_path, &real_file_path) catch |err| switch (err) {
-        error.FileNotFound => {
-            log.err("Master symlink is dangling. Please try to reinstall master!", .{});
-            runner.error_data = .{ .string = "value of the master symlink" };
-            return error.NotFound;
-        },
-        else => return err,
-    };
-    var split = std.mem.splitScalar(u8, old, '/');
-    const dir_path = split.buffer[0 .. split.buffer.len - 4]; // NOTE: ignore /zig (len=4)
-    std.log.debug("{s}", .{dir_path});
+        const old = std.fs.readLinkAbsolute(symlink_exe_path, &real_file_path) catch |err| switch (err) {
+            error.FileNotFound => {
+                log.err("Master symlink is dangling. Please try to reinstall master!", .{});
+                runner.error_data = .{ .string = "value of the master symlink" };
+                return error.NotFound;
+            },
+            else => return err,
+        };
+        const old_dir_path = old[0 .. old.len - 4]; // NOTE: ignore /zig (len=4)
+        log.debug("Old path version: {s}", .{old_dir_path});
+        // NOTE: delete old dir
+        {
+            log.debug("Deleting the old version dir...", .{});
+            var dir = try std.fs.openDirAbsolute(old_dir_path, .{ .iterate = true });
+            defer dir.close();
+            var iter = dir.iterate();
+            while (try iter.next()) |entry| {
+                if (entry.kind == .directory) {
+                    try dir.deleteTree(entry.name);
+                } else {
+                    try dir.deleteFile(entry.name);
+                }
+            }
+            try std.fs.deleteDirAbsolute(old_dir_path);
+        }
+
+        const master_exe = try std.fmt.allocPrint(alloc, "{s}/master", .{appdata_path});
+        defer alloc.free(master_exe);
+        log.debug("Master exe: {s}", .{master_exe});
+        try std.fs.deleteFileAbsolute(master_exe);
+    }
+
+    // NOTE: install new master version, ensure the
+    //       index version is updated before
+    {
+        var fake_opts = std.StringHashMap(cli.Arg.Option).init(alloc);
+        defer fake_opts.deinit();
+        try install(runner, alloc, .{
+            .options = fake_opts,
+            .value = "master",
+        });
+    }
 }
 
 pub fn currentIsMaster(zig_exe: []const u8) !bool {

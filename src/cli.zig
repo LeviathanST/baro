@@ -181,6 +181,7 @@ pub const Runner = struct {
             error.FetchingFailed => std.log.err("fetching {s} failed", .{str}),
             error.Unsupported => std.log.err("your cpu arch - os ({s}) is not supported", .{str}),
             error.NotFound => std.log.err("{s} not found", .{str}),
+            error.NotInstalled => std.log.err("{s} is not installed", .{str}),
             else => {
                 log.debug("unknown error: {}", .{err});
                 log.err("unknown error", .{});

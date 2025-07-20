@@ -92,7 +92,7 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
     }
 
     check_to_fetch_new_index_version_if_not_existed: {
-        std.log.debug("Check to fetch new version...", .{});
+        log.debug("Check to fetch new version...", .{});
         const index_file_path = try std.fmt.allocPrint(
             alloc,
             "{s}/{s}",
@@ -205,7 +205,6 @@ pub fn updateMaster(runner: *Runner, alloc: std.mem.Allocator) !void {
         log.debug("Old path version: {s}", .{old_dir_path});
         // NOTE: delete old dir
         {
-            log.debug("Deleting the old version dir...", .{});
             var dir = try std.fs.openDirAbsolute(old_dir_path, .{ .iterate = true });
             defer dir.close();
             var iter = dir.iterate();
@@ -235,6 +234,69 @@ pub fn updateMaster(runner: *Runner, alloc: std.mem.Allocator) !void {
             .value = "master",
         });
     }
+}
+
+pub fn clean(runner: *cli.Runner, alloc: std.mem.Allocator, arg: Arg) !void {
+    log.info("Cleaning {s} version dir...", .{arg.value.?});
+    const appdata_path = runner.config.options.appdata_path.?;
+    const version = getVersionFromSemverString(
+        alloc,
+        runner,
+        arg.value.?,
+        INDEX_FILE_NAME_WITH_EXT,
+    ) catch |err| switch (err) {
+        error.VerNotFound => {
+            runner.error_data = .{
+                .allocated_string = try std.fmt.allocPrint(
+                    alloc,
+                    "The zig compiler version `{s}`",
+                    .{arg.value.?},
+                ),
+            };
+            return error.NotFound;
+        },
+        else => return err,
+    };
+    defer alloc.free(version);
+
+    const dir_path = try std.fmt.allocPrint(alloc, "{s}/zig-{s}", .{
+        appdata_path,
+        version,
+    });
+    defer alloc.free(dir_path);
+    std.fs.accessAbsolute(dir_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            runner.error_data = .{
+                .allocated_string = try std.fmt.allocPrint(
+                    alloc,
+                    "The zig compiler version `{s}`",
+                    .{arg.value.?},
+                ),
+            };
+            return error.NotInstalled;
+        },
+        else => return err,
+    };
+
+    var dir = try std.fs.openDirAbsolute(dir_path, .{ .iterate = true });
+    defer dir.close();
+    var iter = dir.iterate();
+
+    while (try iter.next()) |entry| {
+        if (entry.kind == .directory) {
+            try dir.deleteTree(entry.name);
+        } else {
+            try dir.deleteFile(entry.name);
+        }
+    }
+    try std.fs.deleteDirAbsolute(dir_path);
+    if (std.mem.eql(u8, arg.value.?, "master")) {
+        const master_exe = try std.fmt.allocPrint(alloc, "{s}/master", .{appdata_path});
+        defer alloc.free(master_exe);
+        log.debug("Master exe: {s}", .{master_exe});
+        try std.fs.deleteFileAbsolute(master_exe);
+    }
+    log.info("Done!", .{});
 }
 
 pub fn currentIsMaster(zig_exe: []const u8) !bool {
@@ -465,42 +527,26 @@ pub fn use(
     arg: Arg,
 ) !void {
     const appdata_path = runner.config.options.appdata_path.?;
-    const index_file_path = try std.fmt.allocPrint(
-        alloc,
-        "{s}/{s}",
-        .{ appdata_path, INDEX_FILE_NAME_WITH_EXT },
-    );
-    defer alloc.free(index_file_path);
-
     // NOTE: Take zig version from the index file
-    const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
-    defer index_file.close();
-
-    const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
-    defer alloc.free(raw);
-
-    // NOTE: check if zig version is available
-    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
-    defer parsed.deinit();
-    const value: std.json.Value = parsed.value;
-    const root = value.object.get(arg.value orelse unreachable) orelse {
-        runner.error_data = RunnerError{
-            .allocated_string = try std.fmt.allocPrint(
-                alloc,
-                "zig compiler version `{s}`",
-                .{arg.value.?},
-            ),
-        };
-        return error.NotFound;
+    const version = getVersionFromSemverString(
+        alloc,
+        runner,
+        arg.value orelse unreachable,
+        INDEX_FILE_NAME_WITH_EXT,
+    ) catch |err| switch (err) {
+        error.VerNotFound => {
+            runner.error_data = RunnerError{
+                .allocated_string = try std.fmt.allocPrint(
+                    alloc,
+                    "The zig compiler version `{s}`",
+                    .{arg.value.?},
+                ),
+            };
+            return error.NotFound;
+        },
+        else => return err,
     };
-
-    const version = blk: {
-        if (std.mem.eql(u8, arg.value.?, "master")) {
-            break :blk (root.object.get("version") orelse unreachable).string;
-        } else {
-            break :blk arg.value.?;
-        }
-    };
+    defer alloc.free(version);
 
     const exe = blk: {
         if (std.mem.eql(u8, arg.value.?, "master")) {
@@ -527,7 +573,7 @@ pub fn use(
             runner.error_data = RunnerError{
                 .allocated_string = try std.fmt.allocPrint(
                     alloc,
-                    "zig compiler installed version `{s}`",
+                    "The zig compiler installed version `{s}`",
                     .{version},
                 ),
             };
@@ -569,4 +615,38 @@ pub fn use(
 
     // NOTE: symlink exe to
     try std.fs.symLinkAbsolute(exe, zig_bin, .{});
+}
+
+pub fn getVersionFromSemverString(
+    alloc: std.mem.Allocator,
+    runner: *Runner,
+    semver: []const u8,
+    index_file_path: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{
+        runner.config.options.appdata_path.?,
+        index_file_path,
+    });
+    defer alloc.free(path);
+    const index_file = try std.fs.openFileAbsolute(path, .{});
+    defer index_file.close();
+
+    const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
+    defer alloc.free(raw);
+
+    // NOTE: check if zig version is available
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+    defer parsed.deinit();
+    const value: std.json.Value = parsed.value;
+    const root = value.object.get(semver) orelse
+        return error.VerNotFound;
+
+    const version = blk: {
+        if (std.mem.eql(u8, semver, "master")) {
+            break :blk (root.object.get("version") orelse unreachable).string;
+        } else {
+            break :blk semver;
+        }
+    };
+    return alloc.dupe(u8, version);
 }

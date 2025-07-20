@@ -34,6 +34,7 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
             defer alloc.free(zig_exe);
             if (!(try currentIsMaster(zig_exe))) break :check_for_update_master;
         }
+        log.debug("Check new master version", .{});
         var http_client: std.http.Client = .{ .allocator = alloc };
         defer http_client.deinit();
         var header_buf: [1024]u8 = undefined;
@@ -112,7 +113,7 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
     }
 }
 
-/// Fetch new index verion and write new last modified version
+/// Fetch new index version and write new last modified version
 pub fn update(runner: *Runner, alloc: std.mem.Allocator, arg: Arg) !void {
     _ = arg;
     var http_client: std.http.Client = .{ .allocator = alloc };
@@ -284,6 +285,16 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
         }
     };
     const output_dir = try std.fmt.allocPrint(alloc, "{s}/zig-{s}", .{ appdata_path, version });
+    defer alloc.free(output_dir);
+    if (std.fs.accessAbsolute(output_dir, .{})) |_| {
+        log.err("the Zig compiler version `{s}` have been installed!", .{version});
+        return;
+    } else |err| {
+        switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+    }
 
     // NOTE: Download tarball file
     var http_client: std.http.Client = .{ .allocator = alloc };
@@ -319,7 +330,6 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
         try file.writeAll(buffer[0..byte_read]);
         total_bytes += byte_read;
     }
-    defer alloc.free(output_dir);
     try std.fs.makeDirAbsolute(output_dir);
     try utils.extractTarFile(alloc, log, tar_file_path, output_dir);
     try std.fs.deleteFileAbsolute(tar_file_path);

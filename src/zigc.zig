@@ -15,73 +15,75 @@ const LAST_MODIFIED_VERSION_FILE = "zigc_last_modified_version";
 const INDEX_FILE_NAME_WITH_EXT = "zigc_index_file.json";
 
 /// Only notify new master version.
+///
 /// Use a `HEAD` request and check `Last-Modified`
 /// from http headers then compare content in cache file.
+///
+/// Write new `last-modified` and fetch new `index version`
+/// if index version or last-modified file is not existed.
 pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
     if (!runner.config.options.check_for_update.?) return;
     if (!runner.config.options.zigc.enabled.?)
         return;
-    check_for_update_master: {
-        if (!runner.config.options.zigc.check_for_update.?)
-            break :check_for_update_master;
-
-        {
-            const zig_exe = try std.fmt.allocPrint(
-                alloc,
-                "{s}/bin/zig",
-                .{runner.config.options.appdata_path.?},
-            );
-            defer alloc.free(zig_exe);
-            if (!(try currentIsMaster(zig_exe))) break :check_for_update_master;
-        }
-        log.debug("Check new master version", .{});
-        var http_client: std.http.Client = .{ .allocator = alloc };
-        defer http_client.deinit();
-        var header_buf: [1024]u8 = undefined;
-        var req = try http_client.open(
-            .HEAD,
-            try .parse("https://ziglang.org/download/index.json"),
-            .{ .server_header_buffer = &header_buf },
-        );
-        defer req.deinit();
-
-        try req.send();
-        try req.finish();
-        try req.wait();
-
-        const res = req.response;
-        var headers = res.iterateHeaders();
-        var last_modified: ?[]const u8 = null;
-        while (headers.next()) |header| {
-            if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
-                last_modified = header.value;
-            }
-        }
-        if (last_modified == null) {
-            runner.error_data = RunnerError{ .string = "last-modified" };
-            return error.NotFound;
-        }
-
-        const last_modified_file = try std.fmt.allocPrint(
+    if (!runner.config.options.zigc.check_for_update.?)
+        return;
+    {
+        const zig_exe = try std.fmt.allocPrint(
             alloc,
-            "{s}/{s}",
-            .{ runner.config.options.cache_path.?, LAST_MODIFIED_VERSION_FILE },
+            "{s}/bin/zig",
+            .{runner.config.options.appdata_path.?},
         );
-        defer alloc.free(last_modified_file);
+        defer alloc.free(zig_exe);
+        if (!(try currentIsMaster(zig_exe))) return;
+    }
+    log.debug("Check new master version", .{});
+    var http_client: std.http.Client = .{ .allocator = alloc };
+    defer http_client.deinit();
+    var header_buf: [1024]u8 = undefined;
+    var req = try http_client.open(
+        .HEAD,
+        try .parse("https://ziglang.org/download/index.json"),
+        .{ .server_header_buffer = &header_buf },
+    );
+    defer req.deinit();
 
-        // NOTE: init cache if not existed
-        std.fs.accessAbsolute(last_modified_file, .{}) catch |err| switch (err) {
-            error.FileNotFound => {
-                log.debug("Write new last modified", .{});
-                try std.fs.cwd().writeFile(.{
-                    .data = last_modified.?,
-                    .sub_path = last_modified_file,
-                    .flags = .{ .truncate = false },
-                });
-            },
-            else => return err,
-        };
+    try req.send();
+    try req.finish();
+    try req.wait();
 
+    const res = req.response;
+    var headers = res.iterateHeaders();
+    var last_modified: ?[]const u8 = null;
+    while (headers.next()) |header| {
+        if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
+            last_modified = header.value;
+        }
+    }
+    if (last_modified == null) {
+        runner.error_data = RunnerError{ .string = "last-modified" };
+        return error.NotFound;
+    }
+
+    const last_modified_file = try std.fmt.allocPrint(
+        alloc,
+        "{s}/{s}",
+        .{ runner.config.options.cache_path.?, LAST_MODIFIED_VERSION_FILE },
+    );
+    defer alloc.free(last_modified_file);
+
+    std.fs.accessAbsolute(last_modified_file, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            log.debug("Write new last modified", .{});
+            try std.fs.cwd().writeFile(.{
+                .data = last_modified.?,
+                .sub_path = last_modified_file,
+                .flags = .{ .truncate = false },
+            });
+            try fetchVerIndex(runner, alloc);
+        },
+        else => return err,
+    };
+    check_for_update_master: {
         const file = try std.fs.openFileAbsolute(last_modified_file, .{ .mode = .read_only });
         const content = try file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
         defer alloc.free(content);
@@ -102,9 +104,14 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
             },
         );
         defer alloc.free(index_file_path);
-        // NOTE: fetch a new index file if not existed
         std.fs.accessAbsolute(index_file_path, .{}) catch |err| switch (err) {
             error.FileNotFound => {
+                log.debug("Write new last modified", .{});
+                try std.fs.cwd().writeFile(.{
+                    .data = last_modified.?,
+                    .sub_path = last_modified_file,
+                    .flags = .{ .truncate = false },
+                });
                 try fetchVerIndex(runner, alloc);
             },
             else => return err,

@@ -2,6 +2,7 @@ const std = @import("std");
 const known_folders = @import("known_folders");
 const log = std.log.scoped(.zig_compiler);
 
+const tool = @import("tool.zig");
 const utils = @import("utils.zig");
 const cli = @import("cli.zig");
 const Runner = cli.Runner;
@@ -27,15 +28,7 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
         return;
     if (!runner.config.options.zigc.check_for_update.?)
         return;
-    {
-        const zig_exe = try std.fmt.allocPrint(
-            alloc,
-            "{s}/bin/zig",
-            .{runner.config.options.appdata_path.?},
-        );
-        defer alloc.free(zig_exe);
-        if (!(try currentIsMaster(zig_exe))) return;
-    }
+
     log.debug("Check new master version", .{});
     var http_client: std.http.Client = .{ .allocator = alloc };
     defer http_client.deinit();
@@ -84,6 +77,15 @@ pub fn checkForUpdate(runner: *Runner, alloc: Allocator) !void {
         else => return err,
     };
     check_for_update_master: {
+        {
+            const zig_exe = try std.fmt.allocPrint(
+                alloc,
+                "{s}/bin/zig",
+                .{runner.config.options.appdata_path.?},
+            );
+            defer alloc.free(zig_exe);
+            if (!(try currentIsMaster(zig_exe))) break :check_for_update_master;
+        }
         const file = try std.fs.openFileAbsolute(last_modified_file, .{ .mode = .read_only });
         const content = try file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);
         defer alloc.free(content);
@@ -370,7 +372,18 @@ pub fn install(runner: *Runner, alloc: Allocator, arg: Arg) !void {
     defer alloc.free(index_file_path);
 
     // NOTE: Take tarball link, zig version from the index file
-    const index_file = try std.fs.openFileAbsolute(index_file_path, .{});
+    const index_file = std.fs.openFileAbsolute(index_file_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            log.warn(
+                \\
+                \\Version file index not found.
+                \\You need to enable Zigc in configuration to automatically
+                \\fetch new one.
+            , .{});
+            return;
+        },
+        else => return err,
+    };
     defer index_file.close();
 
     const raw = try index_file.readToEndAlloc(alloc, MAX_INDEX_FILE_SIZE);

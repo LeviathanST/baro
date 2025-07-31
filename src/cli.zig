@@ -88,11 +88,10 @@ pub const Runner = struct {
             self.error_data = .{ .string = "" };
             return self.processError(error.MissingCommand);
         };
-        if (self.config.options.check_for_update.? and !std.mem.eql(u8, command, "update")) {
-            if (self.config.options.zigc.check_for_update.?) {
-                try zigc.checkForUpdate(self, self.allocator);
-            }
+        if (!std.mem.eql(u8, command, "update")) {
+            try zigc.checkForUpdate(self, self.allocator);
         }
+
         inline for (commands) |c| {
             if (std.mem.eql(u8, c.name, command)) {
                 var arg = self.parseArg(c, &argv) catch |err| {
@@ -182,6 +181,7 @@ pub const Runner = struct {
             error.FetchingFailed => std.log.err("fetching {s} failed", .{str}),
             error.Unsupported => std.log.err("your cpu arch - os ({s}) is not supported", .{str}),
             error.NotFound => std.log.err("{s} not found", .{str}),
+            error.NotInstalled => std.log.err("{s} is not installed", .{str}),
             else => {
                 log.debug("unknown error: {}", .{err});
                 log.err("unknown error", .{});

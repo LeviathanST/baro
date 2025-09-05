@@ -88,6 +88,11 @@ pub fn main() !void {
             .execFn = zigc.use,
             .take_value = .one,
         },
+        .{
+            .name = "clean",
+            .execFn = zigc.clean,
+            .take_value = .one,
+        },
         .{ .name = "list", .execFn = zigc.listAllInstalledVersions },
         .{ .name = "lista", .execFn = zigc.listAllAvailableVersions },
         .{ .name = "update", .execFn = zigc.update },

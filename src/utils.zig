@@ -18,14 +18,31 @@ pub fn extractTarFile(
 }
 
 /// This function init `path` (a file or dir) if it not exists.
-pub fn initFsIfNotExists(kind: enum { file, dir }, path: []const u8) !void {
+/// return `true` if the new one is created.
+pub fn initFsIfNotExists(
+    kind: enum { file, dir },
+    path: []const u8,
+    opts: struct {
+        /// This field can be used as a default data
+        /// when create a file.
+        default_data: []const u8 = "",
+    },
+) !bool {
     std.fs.accessAbsolute(path, .{ .mode = .read_only }) catch |err| switch (err) {
         error.FileNotFound => {
             switch (kind) {
-                .file => _ = try std.fs.createFileAbsolute(path, .{}),
+                .file => {
+                    std.log.info("Create file: {s} - default data: {s}", .{ path, opts.default_data });
+                    const file = try std.fs.createFileAbsolute(path, .{});
+                    defer file.close();
+                    try file.writeAll(opts.default_data);
+                    return true;
+                },
                 .dir => try std.fs.makeDirAbsolute(path),
             }
+            return true;
         },
         else => return err,
     };
+    return false;
 }

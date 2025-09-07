@@ -1,6 +1,7 @@
 const std = @import("std");
 const known_folders = @import("known_folders");
 const cli = @import("cli.zig");
+const utils = @import("utils.zig");
 const allocPrint = std.fmt.allocPrint;
 const log = std.log.scoped(.config);
 
@@ -66,9 +67,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     const allocator = arena.allocator();
     // TODO: user-specified from file.
     const default_options = try Options.default(allocator);
-
-    try initIfNotExisted(default_options.appdata_path.?);
-    try initIfNotExisted(default_options.cache_path.?);
+    _ = try utils.initFsIfNotExists(.dir, default_options.appdata_path.?, .{});
 
     return .{
         .options = default_options,
@@ -113,15 +112,6 @@ pub fn print(ptr: *anyopaque, allocator: std.mem.Allocator, arg: cli.Arg) !void 
         zlint,
         zls,
     });
-}
-
-fn initIfNotExisted(path: []const u8) !void {
-    std.fs.accessAbsolute(path, .{}) catch |err| switch (err) {
-        error.FileNotFound => {
-            try std.fs.makeDirAbsolute(path);
-        },
-        else => return err,
-    };
 }
 
 fn defaultPath(

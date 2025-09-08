@@ -32,7 +32,7 @@ pub fn initFsIfNotExists(
         error.FileNotFound => {
             switch (kind) {
                 .file => {
-                    std.log.info("Create file: {s} - default data: {s}", .{ path, opts.default_data });
+                    std.log.debug("Create file: {s} - default data: {s}", .{ path, opts.default_data });
                     const file = try std.fs.createFileAbsolute(path, .{});
                     defer file.close();
                     try file.writeAll(opts.default_data);

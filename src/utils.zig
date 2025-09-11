@@ -29,7 +29,7 @@ pub fn initFsIfNotExists(
     },
 ) !bool {
     std.fs.accessAbsolute(path, .{ .mode = .read_only }) catch |err| switch (err) {
-        error.FileNotFound => {
+        std.fs.Dir.AccessError.FileNotFound => {
             switch (kind) {
                 .file => {
                     std.log.debug("Create file: {s} - default data: {s}", .{ path, opts.default_data });

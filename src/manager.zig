@@ -379,15 +379,14 @@ pub fn Manager(comptime scoped: @TypeOf(.literal_enum)) type {
             try std.fs.deleteFileAbsolute(tar_file_path);
             log.debug("Clean the tar file!", .{});
 
-            // Assign master exe to $appdata/master
+            // Assign master exe to $appdata/$prefix/master
             if (is_master) {
                 const zig_master_exe = try std.fmt.allocPrint(alloc, "{s}/zig", .{output_dir});
                 defer alloc.free(zig_master_exe);
-
                 const master_symlink = try std.fmt.allocPrint(
                     alloc,
                     "{s}/master",
-                    .{self.info()._app_data_path},
+                    .{tool_data_path},
                 );
                 defer alloc.free(master_symlink);
                 std.log.debug("{s}", .{master_symlink});

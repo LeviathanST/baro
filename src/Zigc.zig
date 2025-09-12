@@ -8,7 +8,7 @@ const Runner = cli.Runner;
 const RunnerError = cli.Runner.Error;
 const Allocator = std.mem.Allocator;
 
-const Manager = @import("manager.zig").Manager;
+const Manager = @import("tool.zig").Manager;
 const ScopedManager = Manager(.zig_compiler);
 const Arg = @import("cli.zig").Arg;
 

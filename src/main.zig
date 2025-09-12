@@ -1,6 +1,7 @@
 const std = @import("std");
-const zigc = @import("zigc.zig");
 const cli = @import("cli.zig");
+const utils = @import("utils.zig");
+const Zigc = @import("Zigc.zig");
 const Config = @import("Config.zig");
 
 const Color = struct {
@@ -40,19 +41,23 @@ fn logFn(
     nosuspend stderr.print(color ++ "[" ++ @tagName(scope) ++ "] " ++ level ++ ": " ++ Color.RESET ++ fmt ++ "\r\n", args) catch return;
 }
 
-fn install(runner: *cli.Runner, alloc: std.mem.Allocator, arg: cli.Arg) !void {
-    if (arg.options.get("compiler")) |_| {
-        try zigc.install(runner, alloc, arg);
-    } else if (arg.options.get("linter")) |_| {
-        std.log.err("todo", .{});
-        unreachable;
-    } else if (arg.options.get("lsp")) |_| {
-        std.log.err("todo", .{});
-        unreachable;
-    } else {
-        try zigc.install(runner, alloc, arg);
+const General = struct {
+    zigc: Zigc,
+    pub fn install(self: *anyopaque, alloc: std.mem.Allocator, arg: cli.Arg) !void {
+        const general: *General = @ptrCast(@alignCast(self));
+        if (arg.options.get("compiler")) |_| {
+            try Zigc.install(&general.zigc, alloc, arg);
+        }
+        if (arg.options.get("linter")) |_| {
+            std.log.err("todo", .{});
+            unreachable;
+        }
+        if (arg.options.get("lsp")) |_| {
+            std.log.err("todo", .{});
+            unreachable;
+        }
     }
-}
+};
 
 pub fn main() !void {
     var base_alloc, const is_debug = switch (@import("builtin").mode) {
@@ -70,10 +75,23 @@ pub fn main() !void {
         }
     }
     const alloc = base_alloc.allocator();
+
+    var config = try Config.init(alloc);
+    defer config.deinit();
+    var runner: cli.Runner = try .init(alloc, config);
+
+    var zigc = runner.createTool(Zigc, "zigc");
+    var general: General = .{ .zigc = zigc };
+
+    try zigc.checkForUpdate(alloc);
+
     const commands = &[_]cli.Command{
         .{
             .name = "install",
-            .execFn = install,
+            .exec = .{
+                .handle = &general,
+                .@"fn" = General.install,
+            },
             .take_value = .one,
             .options = &.{
                 .{
@@ -85,22 +103,19 @@ pub fn main() !void {
         },
         .{
             .name = "use",
-            .execFn = zigc.use,
+            .exec = .{ .handle = &zigc, .@"fn" = Zigc.use },
             .take_value = .one,
         },
         .{
             .name = "clean",
-            .execFn = zigc.clean,
+            .exec = .{ .handle = &zigc, .@"fn" = Zigc.clean },
             .take_value = .one,
         },
-        .{ .name = "list", .execFn = zigc.listAllInstalledVersions },
-        .{ .name = "lista", .execFn = zigc.listAllAvailableVersions },
-        .{ .name = "update", .execFn = zigc.update },
-
-        .{ .name = "config", .execFn = Config.print },
+        .{ .name = "list", .exec = .{ .handle = &zigc, .@"fn" = Zigc.listAllInstalledVersions } },
+        .{ .name = "lista", .exec = .{ .handle = &zigc, .@"fn" = Zigc.listAllAvailableVersions } },
+        .{ .name = "update", .exec = .{ .handle = &zigc, .@"fn" = Zigc.update } },
+        .{ .name = "config", .exec = .{ .handle = &config, .@"fn" = Config.print } },
     };
-    var runner: cli.Runner = try .init(alloc);
-    defer runner.deinit();
 
     try runner.run(commands);
 }

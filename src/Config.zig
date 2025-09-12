@@ -1,6 +1,7 @@
 const std = @import("std");
 const known_folders = @import("known_folders");
 const cli = @import("cli.zig");
+const utils = @import("utils.zig");
 const allocPrint = std.fmt.allocPrint;
 const log = std.log.scoped(.config);
 
@@ -28,7 +29,7 @@ const Options = struct {
 
     pub fn default(alloc: std.mem.Allocator) !Options {
         const appdata_path = try defaultPath(alloc, .data, "");
-        const cache_path = try defaultPath(alloc, .cache, "");
+        const cache_path = try defaultPath(alloc, .cache, ".json");
 
         return .{
             .appdata_path = appdata_path,
@@ -64,11 +65,9 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     }
 
     const allocator = arena.allocator();
-    // TODO: user-speicifed from file.
+    // TODO: user-specified from file.
     const default_options = try Options.default(allocator);
-
-    try initIfNotExisted(default_options.appdata_path.?);
-    try initIfNotExisted(default_options.cache_path.?);
+    _ = try utils.initFsIfNotExists(.dir, default_options.appdata_path.?, .{});
 
     return .{
         .options = default_options,
@@ -82,9 +81,9 @@ pub fn deinit(self: *Self) void {
     alloc.destroy(self._arena);
 }
 
-pub fn print(runner: *cli.Runner, allocator: std.mem.Allocator, arg: cli.Arg) !void {
+pub fn print(ptr: *anyopaque, allocator: std.mem.Allocator, arg: cli.Arg) !void {
     _ = arg;
-    _ = runner;
+    _ = ptr;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -115,22 +114,19 @@ pub fn print(runner: *cli.Runner, allocator: std.mem.Allocator, arg: cli.Arg) !v
     });
 }
 
-fn initIfNotExisted(path: []const u8) !void {
-    std.fs.accessAbsolute(path, .{}) catch |err| switch (err) {
-        error.FileNotFound => {
-            try std.fs.makeDirAbsolute(path);
-        },
-        else => return err,
-    };
-}
-
-fn defaultPath(alloc: std.mem.Allocator, folder: known_folders.KnownFolder, sub_path: []const u8) ![]const u8 {
+fn defaultPath(
+    alloc: std.mem.Allocator,
+    folder: known_folders.KnownFolder,
+    /// NOTE: This arg can be sub_path (e.g /zigc, /sub-path)
+    /// or file extension (e.g .json, .txt)
+    extra_path: []const u8,
+) ![]const u8 {
     return allocPrint(
         alloc,
         "{s}/baro{s}",
         .{
             (try known_folders.getPath(alloc, folder)).?,
-            sub_path,
+            extra_path,
         },
     );
 }

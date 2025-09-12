@@ -2,7 +2,7 @@ const std = @import("std");
 const log = std.log;
 const Config = @import("Config.zig");
 
-const zigc = @import("zigc.zig");
+const Zigc = @import("Zigc.zig");
 
 pub const Arg = struct {
     /// The command's value
@@ -23,7 +23,10 @@ pub const Command = struct {
     name: []const u8,
     options: []const Option = &.{},
     take_value: TakeValue = .none,
-    execFn: *const fn (*Runner, std.mem.Allocator, Arg) anyerror!void,
+    exec: struct {
+        handle: *anyopaque,
+        @"fn": *const fn (*anyopaque, std.mem.Allocator, Arg) anyerror!void,
+    },
 
     pub const Option = struct {
         short_name: []const u8,
@@ -71,34 +74,45 @@ pub const Runner = struct {
         allocated_string: []const u8,
     };
 
-    pub fn init(alloc: std.mem.Allocator) !Runner {
+    pub fn init(alloc: std.mem.Allocator, config: Config) !Runner {
         return .{
             .allocator = alloc,
-            .config = try .init(alloc),
+            .config = config,
         };
     }
-    pub fn deinit(self: *Runner) void {
-        self.config.deinit();
+
+    pub fn createTool(
+        self: *Runner,
+        comptime T: type,
+        sub_path: []const u8,
+    ) T {
+        if (!@hasDecl(T, "init")) {
+            const msg = std.fmt.comptimePrint(
+                "`{s}` doesn't have `init` function.",
+                .{@typeName(T)},
+            );
+            @compileError(msg);
+        }
+
+        return T.init(self, sub_path);
     }
 
-    pub fn run(self: *Runner, comptime commands: []const Command) !void {
+    pub fn run(self: *Runner, commands: []const Command) !void {
         var argv = try std.process.argsWithAllocator(self.allocator);
         _ = argv.skip();
         const command = argv.next() orelse {
             self.error_data = .{ .string = "" };
             return self.processError(error.MissingCommand);
         };
-        if (!std.mem.eql(u8, command, "update")) {
-            try zigc.checkForUpdate(self, self.allocator);
-        }
 
-        inline for (commands) |c| {
+        for (commands) |c| {
             if (std.mem.eql(u8, c.name, command)) {
                 var arg = self.parseArg(c, &argv) catch |err| {
                     return self.processError(err);
                 };
                 defer arg.deinit();
-                return c.execFn(self, self.allocator, arg) catch |err| {
+
+                return c.exec.@"fn"(c.exec.handle, self.allocator, arg) catch |err| {
                     self.processError(err);
                 };
             }
@@ -110,29 +124,28 @@ pub const Runner = struct {
     /// Parse an `Arg` from `std.process.ArgIterator`.
     fn parseArg(
         self: *Runner,
-        comptime command: Command,
+        command: Command,
         iter: *std.process.ArgIterator,
     ) !Arg {
         var options = std.StringHashMap(Arg.Option).init(self.allocator);
-        var arg: Arg = .{
-            .options = options,
-        };
-        errdefer arg.deinit();
+        errdefer options.deinit();
 
         while (iter.next()) |it| {
             if (std.mem.startsWith(u8, it, "-")) {
                 const option = try self.parseOption(command.options, iter, it);
-                try options.put(it, option);
+                try options.put(option.name, option);
             } else {
                 if (command.take_value != .none) {
-                    arg.value = it;
-                    return arg;
+                    return .{
+                        .options = options,
+                        .value = it,
+                    };
                 }
             }
         }
 
         if (command.take_value == .none)
-            return arg;
+            return .{ .options = options };
 
         self.error_data = .{ .string = command.name };
         return error.MissingValue;
@@ -140,11 +153,11 @@ pub const Runner = struct {
 
     fn parseOption(
         self: *Runner,
-        comptime opts: []const Command.Option,
+        opts: []const Command.Option,
         iter: *std.process.ArgIterator,
         s: []const u8,
     ) !Arg.Option {
-        inline for (opts) |opt| {
+        for (opts) |opt| {
             if (opt.eqlName(s)) {
                 // NOTE: Always assign the long name for a option here.
                 var option: Arg.Option = .{ .name = opt.long_name };

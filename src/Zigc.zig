@@ -37,6 +37,7 @@ pub fn checkForUpdate(self: Zigc, alloc: Allocator) !void {
 
     try self.manager.checkForUpdate(
         INDEX_URL,
+        INDEX_URL,
         zig_exe,
     );
 }

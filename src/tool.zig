@@ -83,19 +83,20 @@ pub fn Manager(comptime scoped: @TypeOf(.literal_enum)) type {
         pub fn checkForUpdate(
             self: ScopedManager,
             index_url: []const u8,
+            last_modified_url: []const u8,
             current_exe_path: []const u8,
         ) !void {
             const alloc = self.runner.allocator;
             log.debug("Check new master version", .{});
 
-            const last_modified = try getRemoteLastModified(alloc, index_url);
+            const last_modified = try getRemoteLastModified(alloc, last_modified_url);
             defer if (last_modified != null) alloc.free(last_modified.?);
 
             // Write new last-modified in cache file
             // and fetch new version index to sync in both.
             const cache = try self.info().cache();
             if (cache.wrote_new) {
-                try cache.write(alloc, "last_modified", last_modified.?);
+                _ = try cache.write(alloc, "last_modified", last_modified.?);
                 try self.fetchVerIndex(index_url);
             }
 
@@ -151,7 +152,9 @@ pub fn Manager(comptime scoped: @TypeOf(.literal_enum)) type {
                 cache_file,
                 .{ .default_data = last_modified },
             );
-            if (new_file_is_created) {
+            const cache = try self.info().cache();
+            const wrote_new_last_modified = try cache.write(alloc, "last_modified", last_modified);
+            if (new_file_is_created or wrote_new_last_modified) {
                 try self.fetchVerIndex(url);
             }
         }
@@ -220,7 +223,7 @@ pub fn Manager(comptime scoped: @TypeOf(.literal_enum)) type {
             try self.fetchVerIndex(index_url);
 
             const cache = try self.info().cache();
-            try cache.write(alloc, "last_modified", last_modified.?);
+            _ = try cache.write(alloc, "last_modified", last_modified.?);
 
             try self.updateMaster(
                 old_master_exe,
@@ -617,7 +620,7 @@ const Cache = struct {
         alloc: std.mem.Allocator,
         key: []const u8,
         value: []const u8,
-    ) !void {
+    ) !bool {
         const formatted_key = try std.fmt.allocPrint(alloc, "{s}_{s}", .{ self._prefix, key });
         defer alloc.free(formatted_key);
 
@@ -643,6 +646,11 @@ const Cache = struct {
         // stringify the value with new `value`
         inline for (std.meta.fields(CacheFields)) |f| {
             if (std.mem.eql(u8, f.name, formatted_key)) {
+                // skip to replace the old value into
+                // the new one if they are the same.
+                if (@field(v, f.name)) |old|
+                    if (std.mem.eql(u8, old, value)) return false;
+
                 @field(v, f.name) = value;
                 const json_fmt = std.json.fmt(v, .{ .whitespace = .indent_4 });
                 var alloc_writer = std.io.Writer.Allocating.init(alloc);
@@ -651,10 +659,11 @@ const Cache = struct {
 
                 try file.seekTo(0);
                 _ = try file.write(alloc_writer.written());
-                return;
+                return true;
             }
         }
-        return error.InvalidField;
+        std.log.scoped(.cache).warn("Cannot write invalid field: `{s}`", .{formatted_key});
+        return false;
     }
 
     /// The caller should `free()` memory the returns value
@@ -684,6 +693,7 @@ const Cache = struct {
             }
         }
 
+        std.log.scoped(.cache).warn("Cannot read invalid field: `{s}`", .{formatted_key});
         return error.InvalidField;
     }
 
